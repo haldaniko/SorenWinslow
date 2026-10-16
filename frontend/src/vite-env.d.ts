@@ -3,3 +3,7 @@
 interface ImportMetaEnv {
   readonly VITE_GA_MEASUREMENT_ID?: string;
 }
+
+interface Window {
+  __SOREN_CONFIG__?: { apiUrl?: string; measurementId?: string };
+}

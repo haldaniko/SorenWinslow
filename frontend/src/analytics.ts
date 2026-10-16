@@ -1,4 +1,5 @@
-const measurementId = import.meta.env.VITE_GA_MEASUREMENT_ID?.trim() || 'G-LDEXMRJ0EY';
+const measurementId = (typeof window !== 'undefined' && window.__SOREN_CONFIG__?.measurementId?.trim())
+  || import.meta.env.VITE_GA_MEASUREMENT_ID?.trim() || 'G-LDEXMRJ0EY';
 let scriptLoaded = false;
 let pendingPageView: string | null = null;
 let lastTrackedPath = '';

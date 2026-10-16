@@ -13,10 +13,6 @@ CMD ["npm", "run", "dev"]
 
 FROM base AS build
 
-ARG VITE_API_URL
-ARG VITE_GA_MEASUREMENT_ID
-ENV VITE_API_URL=$VITE_API_URL
-ENV VITE_GA_MEASUREMENT_ID=$VITE_GA_MEASUREMENT_ID
 COPY . .
 RUN npm run build
 
@@ -27,5 +23,6 @@ ENV NODE_ENV=production
 COPY package*.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
+COPY scripts ./scripts
 EXPOSE 3000
 CMD ["npm", "run", "start"]

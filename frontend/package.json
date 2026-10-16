@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0 --port 3000",
     "build": "tsc --noEmit && vite build",
-    "start": "serve -s dist -l 3000",
+    "start": "node scripts/start-production.mjs",
     "lint": "tsc --noEmit"
   },
   "dependencies": {

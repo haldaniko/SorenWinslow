@@ -45,28 +45,32 @@ Set `OPENROUTER_API_KEY` in `backend/.env`. The default model is `meta-llama/lla
 
 ## Production
 
-Keep the existing `.env` and `backend/.env.production` on the server; they contain secrets and are ignored by Git. The PostgreSQL credentials in `.env` are still needed for the one-time import. Keep the same Compose project name and project directory used by the old deployment so the existing `sorenwinslow_prod_postgres_data` and `sorenwinslow_prod_uploads` volumes are found. If the old deployment used `COMPOSE_PROJECT_NAME`, keep its value.
+Keep the same Compose project name and project directory used by the old deployment so the existing `sorenwinslow_prod_postgres_data` and `sorenwinslow_prod_uploads` volumes are found. If the old deployment used `COMPOSE_PROJECT_NAME`, keep its value. Production env files are ignored by Git. Do not run `git clean -fdx` in the deployment directory: it deletes ignored env files, `db.sqlite3`, and `media`.
 
-Before updating the code, stop the old writers and back up both source volumes and any existing host SQLite/media files. Run these commands from the **current production project directory** on Linux:
+Before updating the code, stop the old writers and back up both source volumes and any existing host SQLite/media files. Run these commands from the **current production project directory** on Linux. The backup is outside the Git checkout:
 
 ```sh
 docker compose -f docker-compose.prod.yml stop frontend backend postgres
-backup_dir="$(dirname "$PWD")/sorenwinslow-backup-$(date +%Y%m%d-%H%M%S)"
-mkdir -p "$backup_dir"
+backup_dir="$HOME/sorenwinslow-backup-$(date +%Y%m%d-%H%M%S)"
+mkdir -m 700 "$backup_dir"
 docker run --rm --volumes-from "$(docker compose -f docker-compose.prod.yml ps -a -q postgres)" -v "$backup_dir:/backup" alpine tar -czf /backup/postgres-volume.tar.gz -C /var/lib/postgresql/data .
-docker run --rm --volumes-from "$(docker compose -f docker-compose.prod.yml ps -a -q backend)" -v "$backup_dir:/backup" alpine tar -czf /backup/uploads-volume.tar.gz -C /app/uploads .
+docker run --rm --volumes-from "$(docker compose -f docker-compose.prod.yml ps -a -q migrate)" -v "$backup_dir:/backup" alpine tar -czf /backup/uploads-volume.tar.gz -C /source-uploads .
 for item in db.sqlite3 db.sqlite3-journal db.sqlite3-wal db.sqlite3-shm media; do
   if [ -e "$item" ]; then cp -a "$item" "$backup_dir/"; fi
 done
+tar -tzf "$backup_dir/postgres-volume.tar.gz" | grep -q '^./PG_VERSION$'
+tar -tzf "$backup_dir/uploads-volume.tar.gz" > /dev/null
 ```
 
-Verify both archives exist in `$backup_dir`, then update the code while preserving the existing env files. From the updated project root, the entire cutover is:
+Verify both archives exist in `$backup_dir`, then update the code while preserving any surviving env files. From the updated project root, the entire cutover is:
 
 ```sh
 docker compose -f docker-compose.prod.yml up --build -d
 ```
 
-Compose starts the old PostgreSQL data volume in read-only mode. The `migrate` service reads its six application tables, checks column names, row counts, foreign keys and SQLite integrity, transfers PostgreSQL B-tree indexes, copies the old uploads volume into `./media`, verifies `/uploads/...` references, and publishes a completed temporary SQLite file as `./db.sqlite3`. The backend starts only after `migrate` succeeds. It uses `./db.sqlite3` and `./media` through a host bind mount. SQLite uses DELETE journaling, so its temporary journal file is also on the host. The backend drops privileges to the owner of the project directory before starting.
+Compose starts the old PostgreSQL data volume in read-only mode. The `migrate` service connects through the PostgreSQL Unix socket; the existing cluster's local authentication must permit the `sorenwinslow` role. The service reads its six application tables, checks column names, row counts, foreign keys and SQLite integrity, transfers PostgreSQL B-tree indexes, copies the old uploads volume into `./media`, verifies `/uploads/...` references, and publishes a completed temporary SQLite file as `./db.sqlite3`. The backend starts only after `migrate` succeeds. It uses `./db.sqlite3` and `./media` through a host bind mount. SQLite uses DELETE journaling, so its temporary journal file is also on the host. The backend drops privileges to the owner of the project directory before starting.
+
+If `backend/.env.production` is missing, the backend creates it on the host with permissions `0600`, new persistent JWT secrets, and the production site URL. If the file exists, its settings are preserved. Missing old JWT secrets invalidate existing login sessions; users can log in again with their existing passwords. Lost OpenRouter, SMTP, or other third-party credentials cannot be recreated and must be restored separately. If the root `.env.production` is missing, the frontend uses `https://api.sorenwinslow.com`; restore the file later if the public API URL differs. Do not generate a new PostgreSQL password in an attempt to access the old cluster.
 
 On later starts the migrator validates `./db.sqlite3` and never overwrites it from PostgreSQL; it only checks/copies missing media. An unexpected source schema, missing referenced media, a conflicting media file, or an invalid existing SQLite file stops the migrator with a nonzero exit code. The source volumes are never deleted. Keep the backup until the application and uploaded images have been checked. The existing `admin-seed` service is now optional (`--profile admin-tools`) so normal `up` does not reset the admin password.
 

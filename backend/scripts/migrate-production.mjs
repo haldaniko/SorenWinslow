@@ -94,7 +94,13 @@ async function migrate() {
     return;
   }
 
-  const pg = new Client({ connectionString: process.env.SOURCE_DATABASE_URL });
+  const pg = new Client({
+    host: process.env.PGHOST || 'postgres',
+    port: Number(process.env.PGPORT || 5432),
+    database: process.env.PGDATABASE || process.env.POSTGRES_DB || 'sorenwinslow',
+    user: process.env.PGUSER || process.env.POSTGRES_USER || 'sorenwinslow',
+    password: process.env.PGPASSWORD || process.env.POSTGRES_PASSWORD,
+  });
   await pg.connect();
   try {
     const setting = await pg.query('SHOW default_transaction_read_only');
