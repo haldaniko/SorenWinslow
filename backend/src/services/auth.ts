@@ -37,8 +37,8 @@ export async function login(email: string, password: string) {
   const csrfToken = crypto.randomBytes(24).toString('base64url');
   await query(
     `INSERT INTO refresh_tokens (user_id, token_hash, csrf_token, expires_at)
-     VALUES ($1, $2, $3, now() + ($4 || ' days')::interval)`,
-    [user.id, hashToken(refreshToken), csrfToken, refreshDays],
+     VALUES ($1, $2, $3, $4)`,
+    [user.id, hashToken(refreshToken), csrfToken, new Date(Date.now() + refreshDays * 86400000).toISOString()],
   );
   return { user: { id: user.id, email: user.email, role: user.role }, accessToken, refreshToken, csrfToken };
 }
@@ -49,7 +49,7 @@ export async function refreshSession(refreshToken: string, csrfToken: string | u
     `SELECT rt.*, u.email, u.role
      FROM refresh_tokens rt
      JOIN users u ON u.id = rt.user_id
-     WHERE rt.token_hash = $1 AND rt.expires_at > now()`,
+     WHERE rt.token_hash = $1 AND rt.expires_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
     [hashToken(refreshToken)],
   );
   const row = result.rows[0];
@@ -64,7 +64,7 @@ export async function validateRefreshCsrf(refreshToken: string | undefined, csrf
   const result = await query<{ csrf_token: string }>(
     `SELECT csrf_token
      FROM refresh_tokens
-     WHERE token_hash = $1 AND expires_at > now()
+     WHERE token_hash = $1 AND expires_at > strftime('%Y-%m-%dT%H:%M:%fZ','now')
      LIMIT 1`,
     [hashToken(refreshToken)],
   );

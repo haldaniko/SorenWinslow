@@ -47,14 +47,14 @@ function normalizeSettings(input: Partial<AdminSettings>): AdminSettings {
 
 export async function getAdminSettings(): Promise<AdminSettings> {
   const result = await query<{ value: Partial<AdminSettings> }>('SELECT value FROM admin_settings WHERE key = $1', ['generation']);
-  return normalizeSettings(result.rows[0]?.value || {});
+  return normalizeSettings(result.rows[0]?.value ? JSON.parse(result.rows[0].value as unknown as string) : {});
 }
 
 export async function updateAdminSettings(input: Partial<AdminSettings>): Promise<AdminSettings> {
   const next = normalizeSettings({ ...(await getAdminSettings()), ...input });
   await query(
     `INSERT INTO admin_settings (key, value) VALUES ('generation', $1)
-     ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = now()`,
+     ON CONFLICT (key) DO UPDATE SET value = excluded.value, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')`,
     [JSON.stringify(next)],
   );
   return next;

@@ -13,7 +13,7 @@ function mapPost(row: any): Post {
     coverImage: row.cover_image || '/covers/velvet-index.svg',
     status: row.status,
     author: row.author,
-    tags: row.tags || [],
+    tags: JSON.parse(row.tags || '[]'),
     seoTitle: row.seo_title,
     seoDescription: row.seo_description,
     source: row.source,
@@ -45,7 +45,7 @@ export async function searchPosts(q: string): Promise<Post[]> {
   const term = `%${q.trim()}%`;
   const result = await query(
     `SELECT * FROM generated_posts
-     WHERE status = 'published' AND (title ILIKE $1 OR excerpt ILIKE $1 OR content_html ILIKE $1)
+     WHERE status = 'published' AND (lower(title) LIKE lower($1) OR lower(excerpt) LIKE lower($1) OR lower(content_html) LIKE lower($1))
      ORDER BY created_at DESC LIMIT 30`,
     [term],
   );
@@ -81,7 +81,7 @@ export async function upsertPost(input: PostInput, source: Post['source'] = 'adm
        seo_title = excluded.seo_title,
        seo_description = excluded.seo_description,
        source = excluded.source,
-       updated_at = now()
+       updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now')
      RETURNING *`,
     values,
   );

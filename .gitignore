@@ -12,3 +12,7 @@ frontend/.env.production
 .next
 logs
 *.log
+db.sqlite3
+db.sqlite3-*
+.db.sqlite3.migrating-*
+media/

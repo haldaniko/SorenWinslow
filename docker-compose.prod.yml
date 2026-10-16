@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:16-alpine
+    command: ["postgres", "-c", "default_transaction_read_only=on"]
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
@@ -23,26 +24,50 @@ services:
       timeout: 5s
       retries: 20
 
+  migrate:
+    image: sorenwinslow-backend-prod
+    build:
+      context: ./backend
+      target: prod
+    command: ["node", "scripts/migrate-production.mjs"]
+    restart: "no"
+    environment:
+      PGHOST: postgres
+      PGPORT: 5432
+      PGDATABASE: ${POSTGRES_DB}
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      DATA_ROOT: /data
+      SOURCE_UPLOAD_DIR: /source-uploads
+    volumes:
+      - ./:/data
+      - sorenwinslow_prod_uploads:/source-uploads:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   backend:
     image: sorenwinslow-backend-prod
     build:
       context: ./backend
       target: prod
+    entrypoint: ["sh", "scripts/start-production.sh"]
     restart: unless-stopped
     ports:
       - "4103:4000"
     volumes:
-      - sorenwinslow_prod_uploads:/app/uploads
+      - ./:/data
     env_file:
       - path: backend/.env.production
         required: false
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      SQLITE_PATH: /data/db.sqlite3
+      UPLOAD_DIR: /data/media
       REDIS_URL: redis://redis:6379
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     healthcheck:
@@ -71,18 +96,22 @@ services:
         condition: service_healthy
 
   admin-seed:
+    profiles: ["admin-tools"]
     image: sorenwinslow-backend-prod
     env_file:
       - path: backend/.env.production
         required: false
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      LOCAL_SUPERADMIN_EMAIL: ${LOCAL_SUPERADMIN_EMAIL}
-      LOCAL_SUPERADMIN_PASSWORD: ${LOCAL_SUPERADMIN_PASSWORD}
+      NODE_ENV: production
+      SQLITE_PATH: /data/db.sqlite3
+      LOCAL_SUPERADMIN_EMAIL: ${LOCAL_SUPERADMIN_EMAIL:-}
+      LOCAL_SUPERADMIN_PASSWORD: ${LOCAL_SUPERADMIN_PASSWORD:-}
+    volumes:
+      - ./:/data
     command: npm run create-superadmin
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     restart: "no"
 
 volumes:
