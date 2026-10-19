@@ -25,6 +25,22 @@ function verifyDatabase(file) {
   } finally { db.close(); }
 }
 
+function applyRuntimeMigrations(file) {
+  const db = new Database(file, { fileMustExist: true });
+  try {
+    db.pragma('foreign_keys = ON');
+    db.exec(`CREATE TABLE IF NOT EXISTS bot_article_deliveries (
+      external_id TEXT PRIMARY KEY,
+      post_id TEXT NOT NULL UNIQUE REFERENCES generated_posts(id) ON DELETE CASCADE,
+      payload_hash TEXT NOT NULL,
+      image_url TEXT,
+      published_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+      updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+    )`);
+  } finally { db.close(); }
+}
+
 async function hash(file) {
   return createHash('sha256').update(await fs.readFile(file)).digest('hex');
 }
@@ -87,6 +103,7 @@ async function migrate() {
   if (existing) {
     if (!existing.isFile()) throw new Error(`${target} is not a file`);
     verifyDatabase(target);
+    applyRuntimeMigrations(target);
     await copyMedia(owner);
     const db = new Database(target, { readonly: true, fileMustExist: true });
     try { await verifyMediaUrls(db); } finally { db.close(); }
@@ -218,6 +235,7 @@ async function migrate() {
     await fs.link(temporary, target);
     await fs.rm(temporary);
     temporary = undefined;
+    applyRuntimeMigrations(target);
     console.log(`Published ${target}`);
   } finally {
     await pg.end();

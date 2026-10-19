@@ -10,7 +10,7 @@ export type Post = {
   tags: string[];
   seoTitle: string | null;
   seoDescription: string | null;
-  source: 'admin' | 'ai' | 'legacy';
+  source: 'admin' | 'ai' | 'legacy' | 'bot';
   createdAt: string;
   updatedAt: string;
 };

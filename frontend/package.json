@@ -25,6 +25,7 @@
     "vite": "^6.4.3"
   },
   "overrides": {
+    "compression": "^1.8.2",
     "postcss": "^8.5.10"
   }
 }

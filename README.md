@@ -1,79 +1,100 @@
 # Soren Winslow Review
 
-Literary and entertainment review blog: a sharp “Michelin Guide” for books and TV series.
+Literary and entertainment review blog: a sharp “Michelin Guide” for books, television, culture, and ideas.
+
+## Environment
+
+The whole project uses one root `.env`. No backend-, frontend-, dev-, or production-specific secret files are read.
+
+```sh
+npm run setup:env
+```
+
+The command creates `.env` from `.env.sample`, generates strong values for every secret placeholder, and preserves existing non-placeholder secrets. Keep `.env` outside Git. `docker-compose.yml` overrides only local URLs; `docker-compose.prod.yml` uses the public values from `.env`.
+
+Important settings:
+
+- `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD` — legacy PostgreSQL migration source.
+- `REDIS_PASSWORD` — Redis authentication used by both Compose stacks.
+- `ADMIN_EMAIL`, `ADMIN_PASSWORD` — optional superadmin seed credentials.
+- `JWT_SECRET`, `REFRESH_TOKEN_SECRET` — stable and distinct authentication secrets.
+- `BOT_INTEGRATION_TOKEN` — dedicated Telegram-bot integration secret.
+- `SITE_URL=https://sorenwinslow.com` — public frontend origin used in article/image URLs.
+- `VITE_API_URL=https://api.sorenwinslow.com` — browser-facing backend origin.
+- `OPENROUTER_API_KEY` and SMTP variables — optional integrations.
 
 ## Local Docker Run
 
-1. Copy env files:
-   `cp .env.example .env`
-   `cp backend/.env.example backend/.env`
-   `cp frontend/.env.example frontend/.env`
-2. Generate secrets:
-   `npm --prefix backend run generate-secrets`
-3. Add `JWT_SECRET`, `REFRESH_TOKEN_SECRET`, and optionally `OPENROUTER_API_KEY` to `backend/.env`.
-4. Start everything:
-   `docker compose up --build -d`
-5. Open frontend at `http://localhost:5173`.
+```sh
+npm run dev:docker
+```
 
-## Superadmin
+Open the frontend at `http://localhost:3000`. The hidden admin page is `/admin`. To seed/update its account:
 
-Set `ADMIN_EMAIL` and `ADMIN_PASSWORD` in env, then run:
-`docker compose run --rm admin-seed`
+```sh
+docker compose run --rm admin-seed
+```
 
-The hidden admin page is `/admin`. There is no public Admin link.
+## Telegram Publishing API
 
-## OpenRouter
+The bot API base is `https://api.sorenwinslow.com/api/bot/v1/` (the trailing slash is significant). Every endpoint requires `Authorization: Bearer <BOT_INTEGRATION_TOKEN>`:
 
-Set `OPENROUTER_API_KEY` in `backend/.env`. The default model is `meta-llama/llama-3.1-8b-instruct`.
+- `GET options/`
+- `POST articles/`
+- `GET articles/<external_id>/`
+- `PUT articles/<external_id>/image/`
+- `POST articles/<external_id>/publish/`
 
-## Endpoints
+The site exposes the category slugs `books`, `television`, `culture`, and `business-ideas`; selectable authors are intentionally empty. Articles are created as drafts in the existing `generated_posts` model. The separate `bot_article_deliveries` table only records the stable UUID, request hash, image, and publication state needed for idempotency. Reusing a UUID with identical content returns the existing draft; different content returns `409`.
 
-- `POST /api/auth/login`
-- `POST /api/auth/refresh`
-- `POST /api/auth/logout`
-- `GET /api/posts`
-- `GET /api/posts/:slug`
-- `GET /api/admin/posts`
-- `POST /api/admin/posts`
-- `PUT /api/admin/posts/:id`
-- `DELETE /api/admin/posts/:id`
-- `GET /api/admin/settings`
-- `PUT /api/admin/settings`
+Images accept JPG, PNG, or WebP up to 10 MiB, are verified by file signature, and are stored under the existing persistent `/uploads/covers` storage. Publication is idempotent and does not change the first publication timestamp. The public article URL is `https://sorenwinslow.com/articles/<slug>`.
+
+To register this site in the bot repository on the same machine, after preparing `.env` run:
+
+```sh
+npm run register:bot
+```
+
+This preserves existing `SITES_JSON` entries and adds:
+
+```json
+{"id":"sorenwinslow","name":"Soren Winslow Review","api_base":"https://api.sorenwinslow.com/api/bot/v1/","token_env":"SORENWINSLOW_INTEGRATION_TOKEN"}
+```
+
+It also copies the site token into `SORENWINSLOW_INTEGRATION_TOKEN` in the bot `.env` without printing it.
+
+## Other endpoints
+
+- `POST /api/auth/login`, `/refresh`, `/logout`
+- `GET /api/posts`, `/api/posts/:slug`
+- `GET|POST /api/admin/posts`, `PUT|DELETE /api/admin/posts/:slug`
+- `GET|PUT /api/admin/settings`
 - `POST /api/ai/generate-now`
 - `POST /api/subscribers`
 - `GET /api/health`
 
-## Production
+## Production and migration
 
-Keep the same Compose project name and project directory used by the old deployment so the existing `sorenwinslow_prod_postgres_data` and `sorenwinslow_prod_uploads` volumes are found. If the old deployment used `COMPOSE_PROJECT_NAME`, keep its value. Production env files are ignored by Git. Do not run `git clean -fdx` in the deployment directory: it deletes ignored env files, `db.sqlite3`, and `media`.
+Keep the same Compose project name and project directory as the old deployment so its `sorenwinslow_prod_postgres_data` and `sorenwinslow_prod_uploads` volumes remain discoverable. Back up both volumes plus any existing `db.sqlite3` and `media` directory before the first cutover. Never run `git clean -fdx` in production because it deletes ignored runtime files, including `.env`.
 
-Before updating the code, stop the old writers and back up both source volumes and any existing host SQLite/media files. Run these commands from the **current production project directory** on Linux. The backup is outside the Git checkout:
-
-```sh
-docker compose -f docker-compose.prod.yml stop frontend backend postgres
-backup_dir="$HOME/sorenwinslow-backup-$(date +%Y%m%d-%H%M%S)"
-mkdir -m 700 "$backup_dir"
-docker run --rm --volumes-from "$(docker compose -f docker-compose.prod.yml ps -a -q postgres)" -v "$backup_dir:/backup" alpine tar -czf /backup/postgres-volume.tar.gz -C /var/lib/postgresql/data .
-docker run --rm --volumes-from "$(docker compose -f docker-compose.prod.yml ps -a -q migrate)" -v "$backup_dir:/backup" alpine tar -czf /backup/uploads-volume.tar.gz -C /source-uploads .
-for item in db.sqlite3 db.sqlite3-journal db.sqlite3-wal db.sqlite3-shm media; do
-  if [ -e "$item" ]; then cp -a "$item" "$backup_dir/"; fi
-done
-tar -tzf "$backup_dir/postgres-volume.tar.gz" | grep -q '^./PG_VERSION$'
-tar -tzf "$backup_dir/uploads-volume.tar.gz" > /dev/null
-```
-
-Verify both archives exist in `$backup_dir`, then update the code while preserving any surviving env files. From the updated project root, the entire cutover is:
+Deploy from the production project root:
 
 ```sh
+npm run setup:env
 docker compose -f docker-compose.prod.yml up --build -d
 ```
 
-Compose starts the old PostgreSQL data volume in read-only mode. The `migrate` service connects through the PostgreSQL Unix socket; the existing cluster's local authentication must permit the `sorenwinslow` role. The service reads its six application tables, checks column names, row counts, foreign keys and SQLite integrity, transfers PostgreSQL B-tree indexes, copies the old uploads volume into `./media`, verifies `/uploads/...` references, and publishes a completed temporary SQLite file as `./db.sqlite3`. The backend starts only after `migrate` succeeds. It uses `./db.sqlite3` and `./media` through a host bind mount. SQLite uses DELETE journaling, so its temporary journal file is also on the host. The backend drops privileges to the owner of the project directory before starting.
+The first run starts the old PostgreSQL volume read-only, verifies and copies its six application tables into host `./db.sqlite3`, copies uploads to host `./media`, and validates checksums, references, foreign keys, and SQLite integrity. The new bot integration table is an additive migration: it is created automatically for both a newly migrated database and an already-cut-over SQLite database. No destructive migration command is required.
 
-If `backend/.env.production` is missing, the backend creates it on the host with permissions `0600`, new persistent JWT secrets, and the production site URL. If the file exists, its settings are preserved. Missing old JWT secrets invalidate existing login sessions; users can log in again with their existing passwords. Lost OpenRouter, SMTP, or other third-party credentials cannot be recreated and must be restored separately. If the root `.env.production` is missing, the frontend uses `https://api.sorenwinslow.com`; restore the file later if the public API URL differs. Do not generate a new PostgreSQL password in an attempt to access the old cluster.
+Later starts validate and retain `./db.sqlite3`; they do not recopy PostgreSQL data. Back up `db.sqlite3` while the backend is stopped together with `media/`. The original PostgreSQL and uploads volumes remain available for rollback and must not be removed with `docker compose down -v`.
 
-On later starts the migrator validates `./db.sqlite3` and never overwrites it from PostgreSQL; it only checks/copies missing media. An unexpected source schema, missing referenced media, a conflicting media file, or an invalid existing SQLite file stops the migrator with a nonzero exit code. The source volumes are never deleted. Keep the backup until the application and uploaded images have been checked. The existing `admin-seed` service is now optional (`--profile admin-tools`) so normal `up` does not reset the admin password.
+## Verification
 
-## Database And Backup
+```sh
+npm --prefix backend test
+npm run build
+docker compose config
+docker compose -f docker-compose.prod.yml config
+```
 
-Production runtime data is in host files `./db.sqlite3` and `./media`. Back up the SQLite file while the backend is stopped, together with `./media`. The original PostgreSQL and uploads volumes remain available for rollback and must not be removed with `docker compose down -v`.
+The backend test suite covers missing/invalid tokens, options, draft creation, repeated creation, payload conflicts, recovery by UUID, image validation/idempotency, publication idempotency, and mutation rejection after publication.

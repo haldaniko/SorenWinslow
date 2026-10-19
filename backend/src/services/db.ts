@@ -51,6 +51,17 @@ export async function ensureSchema() {
     db.exec(readFileSync(path.resolve(__dirname, '../../sql/sqlite-schema.sql'), 'utf8'));
   }
 
+  // Additive runtime migration for deployments that already completed the PostgreSQL cutover.
+  db.exec(`CREATE TABLE IF NOT EXISTS bot_article_deliveries (
+    external_id TEXT PRIMARY KEY,
+    post_id TEXT NOT NULL UNIQUE REFERENCES generated_posts(id) ON DELETE CASCADE,
+    payload_hash TEXT NOT NULL,
+    image_url TEXT,
+    published_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+  )`);
+
   const count = await query<{ count: number }>('SELECT count(*) AS count FROM generated_posts');
   if (count.rows[0].count === 0 && process.env.NODE_ENV !== 'production') {
     for (const post of samplePosts) {

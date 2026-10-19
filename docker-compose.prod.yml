@@ -4,8 +4,7 @@ services:
     command: ["postgres", "-c", "default_transaction_read_only=on"]
     restart: unless-stopped
     env_file:
-      - path: .env.production
-        required: false
+      - .env
     volumes:
       - sorenwinslow_prod_postgres_data:/var/lib/postgresql/data
       - sorenwinslow_prod_postgres_socket:/var/run/postgresql
@@ -18,8 +17,11 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    env_file:
+      - .env
+    command: ["redis-server", "--requirepass", "$${REDIS_PASSWORD}"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 20
@@ -32,8 +34,7 @@ services:
     command: ["node", "scripts/migrate-production.mjs"]
     restart: "no"
     env_file:
-      - path: .env.production
-        required: false
+      - .env
     environment:
       PGHOST: /var/run/postgresql
       PGPORT: 5432
@@ -58,11 +59,13 @@ services:
       - "4103:4000"
     volumes:
       - ./:/data
+    env_file:
+      - .env
     environment:
       NODE_ENV: production
       SQLITE_PATH: /data/db.sqlite3
       UPLOAD_DIR: /data/media
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -83,8 +86,7 @@ services:
     ports:
       - "8098:3000"
     env_file:
-      - path: .env.production
-        required: false
+      - .env
     environment:
       NODE_ENV: production
     depends_on:
@@ -95,10 +97,7 @@ services:
     profiles: ["admin-tools"]
     image: sorenwinslow-backend-prod
     env_file:
-      - path: .env.production
-        required: false
-      - path: backend/.env.production
-        required: false
+      - .env
     environment:
       NODE_ENV: production
       SQLITE_PATH: /data/db.sqlite3

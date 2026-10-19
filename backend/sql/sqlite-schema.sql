@@ -29,6 +29,15 @@ CREATE TABLE IF NOT EXISTS generated_posts (
   created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
   updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
 );
+CREATE TABLE IF NOT EXISTS bot_article_deliveries (
+  external_id TEXT PRIMARY KEY,
+  post_id TEXT NOT NULL UNIQUE REFERENCES generated_posts(id) ON DELETE CASCADE,
+  payload_hash TEXT NOT NULL,
+  image_url TEXT,
+  published_at TEXT,
+  created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now')),
+  updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ','now'))
+);
 CREATE TABLE IF NOT EXISTS admin_settings (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL CHECK (json_valid(value)),

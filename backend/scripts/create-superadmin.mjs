@@ -3,9 +3,9 @@ import bcrypt from 'bcryptjs';
 import { readFileSync } from 'fs';
 import path from 'path';
 
-const email = process.env.LOCAL_SUPERADMIN_EMAIL || process.env.SUPERADMIN_EMAIL;
-const password = process.env.LOCAL_SUPERADMIN_PASSWORD || process.env.SUPERADMIN_PASSWORD;
-if (!email || !password) throw new Error('Set LOCAL_SUPERADMIN_EMAIL and LOCAL_SUPERADMIN_PASSWORD');
+const email = process.env.ADMIN_EMAIL || process.env.LOCAL_SUPERADMIN_EMAIL || process.env.SUPERADMIN_EMAIL;
+const password = process.env.ADMIN_PASSWORD || process.env.LOCAL_SUPERADMIN_PASSWORD || process.env.SUPERADMIN_PASSWORD;
+if (!email || !password) throw new Error('Set ADMIN_EMAIL and ADMIN_PASSWORD');
 const file = process.env.SQLITE_PATH || path.resolve('db.sqlite3');
 const db = new Database(file, { fileMustExist: process.env.NODE_ENV === 'production' });
 try {

@@ -1,30 +1,31 @@
 services:
   env-setup:
-    image: node:20-alpine
+    image: node:22-alpine
     working_dir: /workspace
     volumes:
       - .:/workspace
-    command: ["node", "scripts/setup-dev-env.mjs"]
+    command: ["node", "scripts/setup-env.mjs"]
 
   postgres:
     profiles: ["legacy-postgres"]
     image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: sorenwinslow
-      POSTGRES_USER: sorenwinslow
-      POSTGRES_PASSWORD: sorenwinslow
+    env_file:
+      - .env
     volumes:
       - sorenwinslow_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U sorenwinslow -d sorenwinslow"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 5s
       timeout: 5s
       retries: 20
 
   redis:
     image: redis:7-alpine
+    env_file:
+      - .env
+    command: ["redis-server", "--requirepass", "$${REDIS_PASSWORD}"]
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$${REDIS_PASSWORD}\" ping | grep -q PONG"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -37,14 +38,12 @@ services:
     ports:
       - "4000:4000"
     env_file:
-      - path: .env
-        required: false
-      - path: backend/.env
-        required: false
+      - .env
     environment:
       SQLITE_PATH: /app/data/db.sqlite3
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       CORS_ORIGIN: http://localhost:3000
+      SITE_URL: http://localhost:3000
     volumes:
       - sorenwinslow_uploads:/app/uploads
       - sorenwinslow_sqlite_data:/app/data
@@ -67,8 +66,7 @@ services:
     ports:
       - "3000:3000"
     env_file:
-      - path: frontend/.env
-        required: false
+      - .env
     environment:
       VITE_API_URL: http://localhost:4000
     depends_on:
@@ -80,14 +78,9 @@ services:
   admin-seed:
     image: sorenwinslow-backend-dev
     env_file:
-      - path: .env
-        required: false
-      - path: backend/.env
-        required: false
+      - .env
     environment:
       SQLITE_PATH: /app/data/db.sqlite3
-      LOCAL_SUPERADMIN_EMAIL: ${LOCAL_SUPERADMIN_EMAIL:-admin@sorenwinslow.local}
-      LOCAL_SUPERADMIN_PASSWORD: ${LOCAL_SUPERADMIN_PASSWORD:-MySecretPassword123!}
     command: npm run create-superadmin
     volumes:
       - sorenwinslow_sqlite_data:/app/data
